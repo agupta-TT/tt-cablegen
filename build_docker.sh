@@ -16,4 +16,4 @@ fi
 
 
 # Build release image (pulls from GitHub, uses TT_METAL_HOME only to locate Dockerfile)
-docker build --target dev -t ghcr.io/agupta-tt/tt-cable-gen:latest -f $TT_METAL_HOME/tt_telemetry/docker/Dockerfile $TT_METAL_HOME
+docker build --target dev -t ghcr.io/agupta-tt/tt-cable-gen:latest -f Dockerfile .
