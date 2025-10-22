@@ -132,6 +132,8 @@ cmake --build $build_dir --target scaleout_tools
 cmake --build $build_dir --target 2d_big_mesh_cabling_gen
 cmake --build $build_dir --target run_cabling_generator
 
-protoc --python_out=build/tools/scaleout/protobuf/ -I ${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas/ ${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas/cluster_config.proto
-protoc --python_out=build/tools/scaleout/protobuf/ -I ${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas/ ${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas/node_config.proto
-protoc --python_out=build/tools/scaleout/protobuf/ -I ${TT_METAL_HOME}/tools/scaleout/deployment_descriptor/schemas/ ${TT_METAL_HOME}/tools/scaleout/deployment_descriptor/schemas/deployment.proto
+CABLING_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas"
+DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/deployment_descriptor/schemas"
+protoc --python_out=build/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/cluster_config.proto"
+protoc --python_out=build/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/node_config.proto"
+protoc --python_out=build/tools/scaleout/protobuf/ -I "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR" "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR/deployment.proto"
