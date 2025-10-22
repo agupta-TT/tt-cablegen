@@ -72,7 +72,7 @@ fi
 # Validate the build_type
 VALID_BUILD_TYPES=("Release") 
 if [[ ! " ${VALID_BUILD_TYPES[@]} " =~ " ${build_type} " ]]; then
-    echo "ERROR: Invalid build type '$build_type'. Allowed values are Release, Debug, RelWithDebInfo, ASan, TSan."
+    echo "ERROR: Invalid build type '$build_type'. Allowed values are Release."
     show_help
     exit 1
 fi
