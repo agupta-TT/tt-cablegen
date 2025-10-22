@@ -6,7 +6,7 @@ set -eo pipefail
 show_help() {
     echo "Usage: $0 [options]..."
     echo "  -h, --help                       Show this help message."
-    echo "  -b, --build-type build_type      Set the build type. Default is Release. Other options are Debug, RelWithDebInfo, ASan and TSan."
+    echo "  -b, --build-type build_type      Set the build type. Default is Release."
     echo "  --build-dir                      Build directory."
     echo "  --clean                          Remove build workspaces."
     echo ""
@@ -15,11 +15,8 @@ show_help() {
 
 clean() {
     echo "INFO: Removing build artifacts!"
-    rm -rf build_Release* build_Debug* build_RelWithDebInfo* build_ASan* build_TSan* build built .cpmcache
+    rm -rf build_Release* build built .cpmcache
     rm -rf ~/.cache/tt-metal-cache /tmp/tt-metal-cache
-    if [[ ! -z $TT_METAL_CACHE ]]; then
-        echo "User has TT_METAL_CACHE set, please make sure you delete it in order to delete all artifacts!"
-    fi
 }
 
 # Parse CLI options
@@ -73,9 +70,9 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Validate the build_type
-VALID_BUILD_TYPES=("Release" "Debug" "RelWithDebInfo" "ASan" "TSan")
+VALID_BUILD_TYPES=("Release") 
 if [[ ! " ${VALID_BUILD_TYPES[@]} " =~ " ${build_type} " ]]; then
-    echo "ERROR: Invalid build type '$build_type'. Allowed values are Release, Debug, RelWithDebInfo, ASan, TSan."
+    echo "ERROR: Invalid build type '$build_type'. Allowed values are Release."
     show_help
     exit 1
 fi
@@ -122,16 +119,21 @@ cmake_args+=("-DPython3_INCLUDE_DIR=$(python3 -c "from sysconfig import get_path
 cmake_args+=("-DPython3_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') + '/libpython' + sysconfig.get_config_var('LDVERSION') + '.so')")")
 cmake_args+=("-DENABLE_FAKE_KERNELS_TARGET=OFF")
 
+# Force a generic x86-64 architecture to avoid illegal instructions on emulated environments
+cmake_args+=('-DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -march=x86-64"')
+
 echo "INFO: Configuring Project for scaleout tools"
 echo "INFO: Running: cmake "${cmake_args[@]}""
 cmake "${cmake_args[@]}"
 
-# List available targets
-echo "INFO: Available CMake targets:"
-cmake --build $build_dir --target help
-
 # Build only the scaleout visualizer dependencies
 echo "INFO: Building scaleout visualizer dependencies"
 cmake --build $build_dir --target scaleout_tools
-cmake --build $build_dir --target big_mesh_cabling_gen
+cmake --build $build_dir --target 2d_big_mesh_cabling_gen
 cmake --build $build_dir --target run_cabling_generator
+
+CABLING_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas"
+DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/deployment_descriptor/schemas"
+protoc --python_out=build/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/cluster_config.proto"
+protoc --python_out=build/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/node_config.proto"
+protoc --python_out=build/tools/scaleout/protobuf/ -I "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR" "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR/deployment.proto"
