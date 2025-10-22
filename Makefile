@@ -8,8 +8,8 @@ build:
 	cd $(shell git rev-parse --show-toplevel) && docker build --platform linux/amd64 -f Dockerfile -t tt-cablegen .
 
 run: build
-	docker run --platform linux/amd64 -p 5000:5000 -e LOG_LEVEL=$${LOG_LEVEL:-INFO} tt-cablegen
+	docker run --platform linux/amd64 -p 5000:5000 -e LOG_LEVEL=$${LOG_LEVEL:-INFO} -d tt-cablegen
 
 run-debug: build
-	docker run --platform linux/amd64 -p 5000:5000 -e LOG_LEVEL=DEBUG -d -it tt-cablegen
+	docker run --platform linux/amd64 -p 5000:5000 -e LOG_LEVEL=DEBUG -it tt-cablegen
 
