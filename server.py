@@ -310,7 +310,7 @@ def get_node_configs():
 def main():
     """Main function with command line argument parsing"""
     parser = argparse.ArgumentParser(description="Network Cabling Visualizer Web Server")
-    parser.add_argument("-p", "--port", type=int, default=80, help="Port number to run the server on (default: 80)")
+    parser.add_argument("-p", "--port", type=int, default=5000, help="Port number to run the server on (default: 5000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host address to bind to (default: 0.0.0.0)")
     parser.add_argument("--debug", action="store_true", help="Run in debug mode (default: enabled)")
     parser.add_argument("--no-debug", dest="debug", action="store_false", help="Disable debug mode")
