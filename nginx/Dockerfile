@@ -57,8 +57,11 @@ COPY --from=nginx-http-acme-mod /nginx/objs/ngx_http_acme_module.so /usr/lib/ngi
 RUN mkdir -p /var/cache/nginx/acme-vault \
  && chown -R nginx:nginx /var/cache/nginx
 
+# Copy main nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
 # Copy custom nginx configuration template
-COPY nginx.conf.template /etc/nginx/templates/nginx.conf.template
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 # Expose HTTP and HTTPS ports
 EXPOSE 80/tcp 443/tcp
