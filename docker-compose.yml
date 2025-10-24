@@ -1,49 +1,64 @@
+# CableGen Docker Compose Configuration
+#
+# This compose file sets up a complete CableGen deployment with:
+# - CableGen Flask application (port 5000 internal)
+# - Nginx reverse proxy with ACME certificate support (ports 80/443 external)
+# - Automatic SSL certificate provisioning via Vault ACME
+# - Persistent volumes for data and certificate cache
+#
+# Usage:
+#   make setup    # Copy env.example to .env and configure
+#   make build    # Build all Docker images
+#   make up       # Start all services
+#   make logs     # View service logs
+#   make status   # Check service status
+#
+# Environment Variables (set in .env):
+#   VAULT_ACME_DIRECTORY_URL - Vault ACME directory endpoint
+#   VAULT_ACME_CONTACT       - Contact email for ACME certificates
+#   FQDN                     - Fully qualified domain name for certificates
+#
+# The Nginx service automatically provisions SSL certificates and redirects
+# all HTTP traffic to HTTPS. All requests are reverse-proxied to the Flask app.
+
 version: '3.8'
 
 services:
-  # TT-CableGen Flask Application
-  tt-cablegen:
+  # Tenstorrent CableGen Flask Application
+  cablegen:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tt-cablegen-app
+    container_name: cablegen-app
     restart: unless-stopped
     environment:
       - FLASK_ENV=production
       - FLASK_APP=server.py
     networks:
-      - tt-cablegen-network
-    volumes:
-      # Mount any persistent data directories if needed
-      - cablegen-data:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      - cablegen-network
+
 
   # Nginx Reverse Proxy with ACME Support
   nginx:
     build:
       context: ./nginx
       dockerfile: Dockerfile
-    container_name: tt-cablegen-nginx
+    container_name: cablegen-nginx
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
-      - VAULT_ACME_DIRECTORY_URL=${VAULT_ACME_DIRECTORY_URL:-https://vault.tenstorrent.com/v1/pki/acme/directory}
-      - VAULT_ACME_CONTACT=${VAULT_ACME_CONTACT:-it@tenstorrent.com}
-      - TT_FQDN=${TT_FQDN:-cablegen.tenstorrent.com}
+      - VAULT_ACME_DIRECTORY_URL=${VAULT_ACME_DIRECTORY_URL:-https://vault.yourcompany.com/v1/pki/acme/directory}
+      - VAULT_ACME_CONTACT=${VAULT_ACME_CONTACT:-it@yourcompany.com}
+      - FQDN=${FQDN:-cablegen.yourcompany.com}
     volumes:
       - nginx-acme-cache:/var/cache/nginx/acme-vault
       - nginx-logs:/var/log/nginx
     networks:
-      - tt-cablegen-network
+      - cablegen-network
     depends_on:
-      tt-cablegen:
+      cablegen:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
@@ -53,14 +68,12 @@ services:
       start_period: 10s
 
 networks:
-  tt-cablegen-network:
+  cablegen-network:
     driver: bridge
-    name: tt-cablegen-network
+    name: cablegen-network
 
 volumes:
-  cablegen-data:
-    name: tt-cablegen-data
   nginx-acme-cache:
-    name: tt-cablegen-nginx-acme-cache
+    name: cablegen-nginx-acme-cache
   nginx-logs:
-    name: tt-cablegen-nginx-logs
+    name: cablegen-nginx-logs
