@@ -43,32 +43,6 @@ FQDN=cablegen.yourcompany.com
 - **VAULT_ACME_CONTACT**: Email address for ACME certificate registration
 - **FQDN**: Fully qualified domain name that will be used for the SSL certificate
 
-## Local Development
-
-For local development without ACME certificates, you can override environment variables:
-
-### Method 1: Inline override
-```bash
-VAULT_ACME_DIRECTORY_URL=http://localhost:8200/v1/pki/acme/directory \
-VAULT_ACME_CONTACT=dev@yourcompany.com \
-FQDN=localhost \
-docker compose up
-```
-
-### Method 2: Export variables
-```bash
-export VAULT_ACME_DIRECTORY_URL=http://localhost:8200/v1/pki/acme/directory
-export VAULT_ACME_CONTACT=dev@yourcompany.com  
-export FQDN=localhost
-docker compose up
-```
-
-### Method 3: Create local .env
-```bash
-make setup
-# Edit .env with local values
-docker compose up
-```
 
 ## Management Commands
 

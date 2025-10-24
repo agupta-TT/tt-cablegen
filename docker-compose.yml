@@ -21,8 +21,6 @@
 # The Nginx service automatically provisions SSL certificates and redirects
 # all HTTP traffic to HTTPS. All requests are reverse-proxied to the Flask app.
 
-version: '3.8'
-
 services:
   # Tenstorrent CableGen Flask Application
   cablegen:
@@ -36,7 +34,12 @@ services:
       - FLASK_APP=server.py
     networks:
       - cablegen-network
-
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Nginx Reverse Proxy with ACME Support
   nginx:
