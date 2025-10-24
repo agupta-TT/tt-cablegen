@@ -52,7 +52,7 @@ For local development without ACME certificates, you can override environment va
 VAULT_ACME_DIRECTORY_URL=http://localhost:8200/v1/pki/acme/directory \
 VAULT_ACME_CONTACT=dev@yourcompany.com \
 FQDN=localhost \
-docker-compose up
+docker compose up
 ```
 
 ### Method 2: Export variables
@@ -60,14 +60,14 @@ docker-compose up
 export VAULT_ACME_DIRECTORY_URL=http://localhost:8200/v1/pki/acme/directory
 export VAULT_ACME_CONTACT=dev@yourcompany.com  
 export FQDN=localhost
-docker-compose up
+docker compose up
 ```
 
 ### Method 3: Create local .env
 ```bash
 make setup
 # Edit .env with local values
-docker-compose up
+docker compose up
 ```
 
 ## Management Commands

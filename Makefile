@@ -20,31 +20,31 @@ help:
 
 # Build all images
 build:
-	docker-compose build
+	docker compose build
 
 # Start all services
 up:
-	docker-compose up -d
+	docker compose up -d
 
 # Stop all services
 down:
-	docker-compose down
+	docker compose down
 
 # Show logs
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # Open shell in cablegen container
 shell:
-	docker-compose exec cablegen /bin/bash
+	docker compose exec cablegen /bin/bash
 
 # Open shell in nginx container
 nginx-shell:
-	docker-compose exec nginx /bin/bash
+	docker compose exec nginx /bin/bash
 
 # Clean up everything
 clean:
-	docker-compose down -v --remove-orphans
+	docker compose down -v --remove-orphans
 	docker system prune -f
 
 # Restart services
@@ -52,7 +52,7 @@ restart: down up
 
 # Show service status
 status:
-	docker-compose ps
+	docker compose ps
 
 # Setup environment file
 setup:
