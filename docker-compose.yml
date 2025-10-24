@@ -58,6 +58,10 @@ services:
     volumes:
       - nginx-acme-cache:/var/cache/nginx/acme-vault
       - nginx-logs:/var/log/nginx
+
+      # Mount Ubuntu standard CA certificates to trust enterprise roots.
+      # May need to be changed for other distros.
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
     networks:
       - cablegen-network
     depends_on:
