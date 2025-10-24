@@ -13,8 +13,6 @@ acme_issuer vault {
     contact     ${VAULT_ACME_CONTACT};
     state_path  /var/cache/nginx/acme-vault;
     accept_terms_of_service;
-    # Enable debug logging for ACME
-    debug       on;
 }
 
     # HTTP server for ACME challenges and redirects
