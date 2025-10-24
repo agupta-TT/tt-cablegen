@@ -11,16 +11,25 @@ Features:
 - Color coding by cable length with visual hierarchy
 """
 
-import csv
 import argparse
 import sys
 import json
+import random
 from collections import defaultdict
 import os
 
 
 class NetworkCablingCytoscapeVisualizer:
-    """Professional network cabling topology visualizer using cytoscape.js with templates"""
+    """Professional network cabling topology visualizer using cytoscape.js with templates
+    
+    Features:
+    - Unified CSV parser supporting multiple formats (hierarchical, hostname-based, minimal)
+    - Template-based element positioning to reduce redundancy
+    - Hierarchical compound nodes (Racks > Shelf Units > Trays > Ports)
+    - Intelligent edge routing with automatic collision avoidance
+    - Interactive web interface with zoom, pan, and selection
+    - Color coding by cable length with visual hierarchy
+    """
 
     # Common dimensions used by all node types
     DEFAULT_SHELF_DIMENSIONS = {
@@ -39,6 +48,12 @@ class NetworkCablingCytoscapeVisualizer:
         "spacing": 25,
         "padding": 8,  # Padding around ports inside tray
     }
+
+    # Edge styling constants
+    BASE_CONTROL_DISTANCE = 60
+    CONTROL_WEIGHTS = [0.25, 0.75]
+    LABEL_POSITION_MIN = 0.2
+    LABEL_POSITION_MAX = 0.8
 
     # Utility methods for common CSV parsing patterns
     @staticmethod
@@ -78,10 +93,10 @@ class NetworkCablingCytoscapeVisualizer:
 
     @staticmethod
     def normalize_node_type(node_type, default="WH_GALAXY"):
-        """Normalize node type to lowercase"""
+        """Normalize node type to lowercase and trim whitespace"""
         if not node_type:
             return default.lower()
-        return node_type.lower()
+        return node_type.strip().lower()
 
     @staticmethod
     def create_connection_object(source_data, dest_data, cable_length="Unknown", cable_type="400G_AEC"):
@@ -195,8 +210,8 @@ class NetworkCablingCytoscapeVisualizer:
         # Calculate auto dimensions for trays based on port layout
         self.current_config = self.calculate_auto_dimensions(self.current_config)
 
-        # Initialize element type templates
-        if self.csv_format == "20_column":
+        # Initialize element type templates based on format
+        if self.csv_format == "hierarchical":
             # Full hierarchy with racks
             self.element_templates = {
                 "rack": {
@@ -234,7 +249,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "dimensions_spacing"
             ]
         else:
-            # Shelf-only format for 8-column
+            # Shelf-only format for hostname_based and minimal
             self.element_templates = {
                 "shelf": {
                     "dimensions": self.current_config["shelf_dimensions"],
@@ -266,30 +281,61 @@ class NetworkCablingCytoscapeVisualizer:
             ]
 
     def detect_csv_format(self, csv_file):
-        """Detect CSV format by examining the first data row"""
+        """Detect CSV format by examining headers and available fields"""
         try:
             with open(csv_file, "r") as file:
                 lines = file.readlines()
 
-                # Skip headers and find first data row
-                for line in lines[2:]:  # Skip first two header lines
-                    line = line.strip()
-                    if not line:
-                        continue
+            if len(lines) < 2:
+                raise ValueError("CSV file must have at least 2 header lines")
 
-                    # Count columns by splitting
-                    columns = line.split(",")
-                    column_count = len([col for col in columns if col])  # Count non-empty columns
-
-                    if column_count >= 20:
-                        return "20_column"
-                    elif column_count >= 8:
-                        return "8_column"
-                    else:
-                        raise ValueError(f"Unrecognized CSV format: {column_count} columns found")
-
-            raise ValueError("No data rows found in CSV")
-
+            # Parse headers to detect available fields
+            # Look for the line that contains actual column headers (not grouping headers)
+            header_line = None
+            for i in range(1, min(3, len(lines))):  # Check lines 1 and 2
+                line = lines[i].strip()
+                if line and not line.startswith("Source") and not line.startswith("Destination"):
+                    # This looks like actual column headers
+                    header_line = line
+                    break
+            
+            if not header_line:
+                # Fallback to line 2 if no proper headers found
+                header_line = lines[1].strip()
+            
+            headers = [h.strip().lower() for h in header_line.split(",")]
+            
+            # Define field mappings for different CSV formats
+            field_mappings = {
+                "hostname": ["hostname", "host", "node"],
+                "hall": ["hall", "building", "facility"],
+                "aisle": ["aisle", "row", "corridor"],
+                "rack": ["rack", "rack_num", "rack_number"],
+                "shelf_u": ["shelf u", "shelf_u", "shelf", "u", "unit"],
+                "tray": ["tray", "tray_num", "tray_number"],
+                "port": ["port", "port_num", "port_number"],
+                "label": ["label", "id", "identifier"],
+                "node_type": ["node type", "node_type", "type", "model"],
+                "cable_length": ["cable length", "cable_length", "length"],
+                "cable_type": ["cable type", "cable_type", "cable"]
+            }
+            
+            # Detect which fields are available
+            available_fields = {}
+            for field_name, possible_headers in field_mappings.items():
+                for header in headers:
+                    if any(possible in header.lower() for possible in possible_headers):
+                        available_fields[field_name] = header
+                        break
+            
+            # Determine format based on available fields
+            if "rack" in available_fields and "shelf_u" in available_fields:
+                return "hierarchical"  # Has rack/shelf hierarchy
+            elif "hostname" in available_fields:
+                return "hostname_based"  # Uses hostnames instead of rack/shelf
+            else:
+                return "minimal"  # Only has tray/port/node_type
+                
         except Exception as e:
             return None
 
@@ -408,288 +454,350 @@ class NetworkCablingCytoscapeVisualizer:
         return config
 
     def parse_csv(self, csv_file):
-        """Parse CSV file containing cabling connections with format auto-detection"""
+        """Parse CSV file containing cabling connections with unified flexible parsing"""
         try:
-            # First, detect the CSV format
+            # First, detect the CSV format and available fields
             self.csv_format = self.detect_csv_format(csv_file)
             if not self.csv_format:
                 return []
 
             print(f"Detected CSV format: {self.csv_format}")
 
-            if self.csv_format == "20_column":
-                return self.parse_20_column_csv(csv_file)
-            elif self.csv_format == "8_column":
-                return self.parse_8_column_csv(csv_file)
-            else:
-                raise ValueError(f"Unsupported CSV format: {self.csv_format}")
+            # Use the new unified parser
+            return self.parse_unified_csv(csv_file)
 
         except Exception as e:
             print(f"Error parsing CSV file: {e}")
             return []
 
-    def parse_20_column_csv(self, csv_file):
-        """Parse 20-column CSV with full hierarchy including hostname (Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,...)"""
+    def parse_unified_csv(self, csv_file):
+        """Unified CSV parser that handles any combination of available fields"""
         try:
             lines = self.read_csv_lines(csv_file)
-            node_types_seen = set()
-
-            # Process data lines starting from line 3 (index 2)
-            for line in lines[2:]:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # Split by comma to get all columns
-                row_values = line.split(",")
-
-                # CSV structure: Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Cable Length,Cable Type
-                if len(row_values) >= 18:
-                    # Source columns: positions 0,1,2,3,4,5,6,7,8 = Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type
-                    src_hostname = row_values[0] if row_values[0] else ""
-                    src_hall = row_values[1] if row_values[1] else ""
-                    src_aisle = row_values[2] if row_values[2] else ""
-                    src_rack = self.normalize_rack(row_values[3])
-                    src_shelf_u = self.normalize_shelf_u(row_values[4])
-                    src_tray = self.safe_int(row_values[5])
-                    src_port = self.safe_int(row_values[6])
-                    src_label = row_values[7] if row_values[7] else f"{src_rack}{src_shelf_u}-{src_tray}-{src_port}"
-                    src_node_type = self.normalize_node_type(row_values[8])
-
-                    # Destination columns: positions 9,10,11,12,13,14,15,16,17 = Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type
-                    dst_hostname = row_values[9] if len(row_values) > 9 and row_values[9] else ""
-                    dst_hall = row_values[10] if len(row_values) > 10 and row_values[10] else ""
-                    dst_aisle = row_values[11] if len(row_values) > 11 and row_values[11] else ""
-                    dst_rack = self.normalize_rack(row_values[12] if len(row_values) > 12 else "")
-                    dst_shelf_u = self.normalize_shelf_u(row_values[13] if len(row_values) > 13 else "")
-                    dst_tray = self.safe_int(row_values[14] if len(row_values) > 14 else "")
-                    dst_port = self.safe_int(row_values[15] if len(row_values) > 15 else "")
-                    dst_label = (
-                        row_values[16]
-                        if len(row_values) > 16 and row_values[16]
-                        else f"{dst_rack}{dst_shelf_u}-{dst_tray}-{dst_port}"
-                    )
-                    dst_node_type = self.normalize_node_type(row_values[17] if len(row_values) > 17 else "")
-
-                    # Cable info: positions 18,19 = Cable Length,Cable Type
-                    cable_length = row_values[18] if len(row_values) > 18 and row_values[18] else "Unknown"
-                    cable_type = row_values[19] if len(row_values) > 19 and row_values[19] else "400G_AEC"
-
-                    # Track node types for each shelf unit
-                    src_shelf_key = f"{src_rack}_{src_shelf_u}"
-                    dst_shelf_key = f"{dst_rack}_{dst_shelf_u}"
-                    self.mixed_node_types[src_shelf_key] = src_node_type
-                    self.mixed_node_types[dst_shelf_key] = dst_node_type
-
-                    # Track location information for each shelf unit
-                    self.node_locations[src_shelf_key] = {
-                        "hostname": src_hostname,
-                        "hall": src_hall,
-                        "aisle": src_aisle,
-                        "rack_num": src_rack,
-                        "shelf_u": src_shelf_u,
-                    }
-                    self.node_locations[dst_shelf_key] = {
-                        "hostname": dst_hostname,
-                        "hall": dst_hall,
-                        "aisle": dst_aisle,
-                        "rack_num": dst_rack,
-                        "shelf_u": dst_shelf_u,
-                    }
-
-                    node_types_seen.add(src_node_type)
-                    node_types_seen.add(dst_node_type)
-
-                    connection = {
-                        "source": {
-                            "hostname": src_hostname,
-                            "hall": src_hall,
-                            "aisle": src_aisle,
-                            "rack_num": src_rack,
-                            "shelf_u": src_shelf_u,
-                            "tray": src_tray,
-                            "port": src_port,
-                            "label": src_label,
-                            "node_type": src_node_type,
-                        },
-                        "destination": {
-                            "hostname": dst_hostname,
-                            "hall": dst_hall,
-                            "aisle": dst_aisle,
-                            "rack_num": dst_rack,
-                            "shelf_u": dst_shelf_u,
-                            "tray": dst_tray,
-                            "port": dst_port,
-                            "label": dst_label,
-                            "node_type": dst_node_type,
-                        },
-                        "cable_length": cable_length,
-                        "cable_type": cable_type,
-                    }
-
-                    self.connections.append(connection)
-
-                    # Track rack units for layout
-                    self.rack_units.setdefault(src_rack, set()).add(src_shelf_u)
-                    self.rack_units.setdefault(dst_rack, set()).add(dst_shelf_u)
-
-                # Create dynamic configurations for unknown node types
-                for node_type in node_types_seen:
-                    if node_type not in self.shelf_unit_configs:
-                        self.analyze_and_create_dynamic_config(node_type, self.connections)
-
-                # Set a default shelf unit type if not specified (use the most common one)
-                if not self.shelf_unit_type and node_types_seen:
-                    self.shelf_unit_type = list(node_types_seen)[0]  # Use first one found
-                elif not self.shelf_unit_type:
-                    self.shelf_unit_type = "wh_galaxy"
-
-                # Initialize templates with the default type
-                self.set_shelf_unit_type(self.shelf_unit_type)
-
-            return self.connections
-
-        except Exception as e:
-            return []
-
-    def parse_8_column_csv(self, csv_file):
-        """Parse 8-column CSV with hostname format (Hostname,Tray,Port,Node Type,...)"""
-        try:
-            lines = self.read_csv_lines(csv_file)
-            node_types_seen = set()
-
-            # Process data lines starting from line 3 (index 2)
-            for line in lines[2:]:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # Split by comma to get all columns
-                row_values = line.split(",")
-
-                # CSV structure: Hostname,Tray,Port,Node Type,Hostname,Tray,Port,Node Type
-                if len(row_values) >= 8:
-                    # Source columns: positions 0,1,2,3 = Hostname,Tray,Port,Node Type
-                    src_hostname = row_values[0] if row_values[0] else "shelf-01"
-                    src_tray = self.safe_int(row_values[1])
-                    src_port = self.safe_int(row_values[2])
-                    src_node_type = self.normalize_node_type(row_values[3])
-
-                    # Destination columns: positions 4,5,6,7 = Hostname,Tray,Port,Node Type
-                    dst_hostname = row_values[4] if len(row_values) > 4 and row_values[4] else "shelf-02"
-                    dst_tray = self.safe_int(row_values[5] if len(row_values) > 5 else "")
-                    dst_port = self.safe_int(row_values[6] if len(row_values) > 6 else "")
-                    dst_node_type = self.normalize_node_type(row_values[7] if len(row_values) > 7 else "")
-
-                    # Track node types for each shelf unit (hostname)
-                    self.shelf_units[src_hostname] = src_node_type
-                    self.shelf_units[dst_hostname] = dst_node_type
-
-                    node_types_seen.add(src_node_type)
-                    node_types_seen.add(dst_node_type)
-
-                    # Create source and destination data objects
-                    source_data = {
-                        "hostname": src_hostname,
-                        "tray": src_tray,
-                        "port": src_port,
-                        "label": f"{src_hostname}-{src_tray}-{src_port}",
-                        "node_type": src_node_type,
-                    }
-
-                    dest_data = {
-                        "hostname": dst_hostname,
-                        "tray": dst_tray,
-                        "port": dst_port,
-                        "label": f"{dst_hostname}-{dst_tray}-{dst_port}",
-                        "node_type": dst_node_type,
-                    }
-
-                    connection = self.create_connection_object(source_data, dest_data)
-
-                    self.connections.append(connection)
-
-                # Create dynamic configurations for unknown node types
-                for node_type in node_types_seen:
-                    if node_type not in self.shelf_unit_configs:
-                        self.analyze_and_create_dynamic_config(node_type, self.connections)
-
-                # Set a default shelf unit type if not specified (use the most common one)
-                if not self.shelf_unit_type and node_types_seen:
-                    self.shelf_unit_type = list(node_types_seen)[0]  # Use first one found
-                elif not self.shelf_unit_type:
-                    self.shelf_unit_type = "wh_galaxy"
-
-                # Initialize templates with the default type
-                self.set_shelf_unit_type(self.shelf_unit_type)
-
-            return self.connections
-
-        except Exception as e:
-            return []
-
-    def parse_connection_label(self, label):
-        """Parse connection label formats: 120A03U14-2-3 or SC_Floor_5A01U32-2-1"""
-        try:
-            if label.startswith("120A"):
-                # Format: 120A03U14-2-3
-                parts = label[4:].split("-")  # Remove "120A" prefix
-
-                # Extract rack and shelf from first part (e.g., "03U14")
-                rack_shelf = parts[0]
-                if "U" in rack_shelf:
-                    rack_num, shelf_u = rack_shelf.split("U")
-                    shelf_u = shelf_u.zfill(2)  # Ensure consistent formatting, numeric only
-                else:
-                    return None
-
-                tray = int(parts[1]) if len(parts) > 1 else 1
-                port = int(parts[2]) if len(parts) > 2 else 1
-
-                return {
-                    "rack": rack_num.zfill(2),  # Ensure consistent formatting
-                    "shelf": shelf_u,
-                    "tray": tray,
-                    "port": port,
-                }
-
-            elif "A" in label and "U" in label and "-" in label:
-                # Format: SC_Floor_5A01U32-2-1
-                # Find the A and U positions to extract rack and shelf
-                a_pos = label.rfind("A")  # Find last A
-                if a_pos == -1:
-                    return None
-
-                # Extract everything after the last A
-                after_a = label[a_pos + 1 :]  # e.g., "01U32-2-1"
-
-                # Split by dash to get rack_shelf and tray/port parts
-                parts = after_a.split("-")
-                if len(parts) < 3:
-                    return None
-
-                rack_shelf_part = parts[0]  # e.g., "01U32"
-
-                if "U" in rack_shelf_part:
-                    rack_num, shelf_u = rack_shelf_part.split("U")
-                    shelf_u = shelf_u.zfill(2)  # Ensure consistent formatting, numeric only
-                else:
-                    return None
-
-                tray = int(parts[1]) if len(parts) > 1 else 1
-                port = int(parts[2]) if len(parts) > 2 else 1
-
-                return {
-                    "rack": rack_num.zfill(2),  # Ensure consistent formatting
-                    "shelf": shelf_u,
-                    "tray": tray,
-                    "port": port,
-                }
+            
+            # Parse headers to get field mappings
+            # Look for the line that contains actual column headers (not grouping headers)
+            header_line = None
+            for i in range(1, min(3, len(lines))):  # Check lines 1 and 2
+                line = lines[i].strip()
+                if line and not line.startswith("Source") and not line.startswith("Destination"):
+                    # This looks like actual column headers
+                    header_line = line
+                    break
+            
+            if not header_line:
+                # Fallback to line 2 if no proper headers found
+                header_line = lines[1].strip()
+            
+            headers = [h.strip() for h in header_line.split(",")]
+            
+            # Define field mappings
+            field_mappings = {
+                "hostname": ["hostname", "host", "node"],
+                "hall": ["hall", "building", "facility", "data hall"],
+                "aisle": ["aisle", "row", "corridor"],
+                "rack": ["rack", "rack_num", "rack_number"],
+                "shelf_u": ["shelf u", "shelf_u", "shelf", "u", "unit"],
+                "tray": ["tray", "tray_num", "tray_number"],
+                "port": ["port", "port_num", "port_number"],
+                "label": ["label", "id", "identifier"],
+                "node_type": ["node type", "node_type", "type", "model"],
+                "cable_length": ["cable length", "cable_length", "length"],
+                "cable_type": ["cable type", "cable_type", "cable"]
+            }
+            
+            # Map headers to field names - handle duplicate field names
+            field_positions = {}
+            for i, header in enumerate(headers):
+                header_lower = header.lower()
+                for field_name, possible_headers in field_mappings.items():
+                    # Use exact matching to avoid false positives
+                    if header_lower in possible_headers:
+                        # Store all positions for each field name
+                        if field_name not in field_positions:
+                            field_positions[field_name] = []
+                        field_positions[field_name].append(i)
+                        break
+            
+            # Also check the first line (grouping header) for cable fields
+            if len(lines) > 0:
+                first_line = lines[0].strip()
+                first_line_parts = first_line.split(',')
+                for i, part in enumerate(first_line_parts):
+                    part_lower = part.lower()
+                    for field_name, possible_headers in field_mappings.items():
+                        if any(possible in part_lower for possible in possible_headers):
+                            # Store all positions for each field name
+                            if field_name not in field_positions:
+                                field_positions[field_name] = []
+                            field_positions[field_name].append(i)
+                            break
+            
+            # Special case: handle "Source Device" and "Dest Device" fields
+            for i, header in enumerate(headers):
+                header_lower = header.lower()
+                if header_lower == "source device":
+                    if "node_type" not in field_positions:
+                        field_positions["node_type"] = []
+                    field_positions["node_type"].append(i)
+                elif header_lower == "dest device":
+                    if "node_type" not in field_positions:
+                        field_positions["node_type"] = []
+                    field_positions["node_type"].append(i)
+            
+            # Determine if we have source/destination pairs or single connection
+            # Check if we have duplicate field names (indicating source/destination structure)
+            has_source_dest = any(len(positions) > 1 for positions in field_positions.values())
+            
+            source_fields = {}
+            dest_fields = {}
+            
+            if has_source_dest:
+                # Split fields into source and destination based on duplicate field names
+                # Find the first occurrence of a duplicate field name to determine split point
+                dest_start_pos = None
+                for field_name, positions in field_positions.items():
+                    if len(positions) > 1:
+                        # Find the first duplicate position
+                        for i in range(1, len(positions)):
+                            if positions[i] != positions[i-1] + 1:
+                                dest_start_pos = positions[i]
+                                break
+                        if dest_start_pos is not None:
+                            break
+                
+                # If no non-consecutive duplicates found, use the first duplicate position
+                if dest_start_pos is None:
+                    for field_name, positions in field_positions.items():
+                        if len(positions) > 1:
+                            dest_start_pos = positions[1]  # Use the second occurrence
+                            break
+                
+                if dest_start_pos is None:
+                    # Fallback: use mid_point calculation
+                    if self.csv_format == "hierarchical":
+                        if len(headers) >= 20:
+                            dest_start_pos = 7
+                        else:
+                            dest_start_pos = 9
+                    else:
+                        dest_start_pos = 4
+                
+                for field_name, positions in field_positions.items():
+                    # Special handling for node_type fields
+                    if field_name == "node_type" and len(positions) == 2:
+                        # For node_type, use the first position for source and second for destination
+                        source_fields[field_name] = positions[0]
+                        dest_fields[field_name] = positions[1]
+                    else:
+                        # Find source position (first occurrence before dest_start_pos)
+                        source_pos = None
+                        dest_pos = None
+                        for pos in positions:
+                            if pos < dest_start_pos and source_pos is None:
+                                source_pos = pos
+                            elif pos >= dest_start_pos and dest_pos is None:
+                                dest_pos = pos
+                        
+                        # Always assign source position if it exists
+                        if source_pos is not None:
+                            source_fields[field_name] = source_pos
+                        # Always assign destination position if it exists
+                        if dest_pos is not None:
+                            dest_fields[field_name] = dest_pos
+                
             else:
-                return None
+                # Single connection format - use all fields
+                for field_name, positions in field_positions.items():
+                    if positions:
+                        field_positions[field_name] = positions[0]  # Use first occurrence
+            
+            node_types_seen = set()
+            
+            # Process data lines - start from line 3 (index 2) or after headers
+            data_start_line = 2  # Default to line 3 (index 2)
+            for i, line in enumerate(lines[2:], start=2):
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Skip if this looks like a header line
+                if line.startswith("Source") or line.startswith("Destination") or line.startswith("Hostname") or line.startswith("Data Hall"):
+                    continue
+                
+                row_values = line.split(",")
+                
+                # Validate tray and port fields before parsing to avoid creating fake connections
+                if has_source_dest:
+                    # Check if source and destination tray/port fields are filled
+                    source_tray = row_values[source_fields.get("tray", -1)] if source_fields.get("tray", -1) < len(row_values) else ""
+                    source_port = row_values[source_fields.get("port", -1)] if source_fields.get("port", -1) < len(row_values) else ""
+                    dest_tray = row_values[dest_fields.get("tray", -1)] if dest_fields.get("tray", -1) < len(row_values) else ""
+                    dest_port = row_values[dest_fields.get("port", -1)] if dest_fields.get("port", -1) < len(row_values) else ""
+                else:
+                    # Single connection format - check first half for source, second half for destination
+                    mid_point = len(row_values) // 2
+                    source_tray = row_values[field_positions.get("tray", -1)] if field_positions.get("tray", -1) < len(row_values) else ""
+                    source_port = row_values[field_positions.get("port", -1)] if field_positions.get("port", -1) < len(row_values) else ""
+                    dest_tray = row_values[field_positions.get("tray", -1) + mid_point] if field_positions.get("tray", -1) + mid_point < len(row_values) else ""
+                    dest_port = row_values[field_positions.get("port", -1) + mid_point] if field_positions.get("port", -1) + mid_point < len(row_values) else ""
+                
+                # Skip rows where tray or port are not filled
+                if not source_tray or not source_port or not dest_tray or not dest_port:
+                    continue
+                
+                if has_source_dest:
+                    # Parse source and destination separately
+                    source_data = self._parse_connection_end(row_values, source_fields, "source")
+                    dest_data = self._parse_connection_end(row_values, dest_fields, "destination")
+                else:
+                    # Single connection format - assume first half is source, second half is destination
+                    mid_point = len(row_values) // 2
+                    source_data = self._parse_connection_end(row_values[:mid_point], field_positions, "source")
+                    dest_data = self._parse_connection_end(row_values[mid_point:], 
+                                                         {k: v-mid_point for k, v in field_positions.items()}, "destination")
+                
+                # Extract cable information
+                cable_length = "Unknown"
+                cable_type = "400G_AEC"
+                
+                # Look for cable info in the row - check all positions for cable fields
+                for field_name, positions in field_positions.items():
+                    if field_name == "cable_length" and positions:
+                        for pos in positions:
+                            if pos < len(row_values) and row_values[pos]:
+                                cable_length = row_values[pos]
+                                break
+                    elif field_name == "cable_type" and positions:
+                        for pos in positions:
+                            if pos < len(row_values) and row_values[pos]:
+                                cable_type = row_values[pos]
+                                break
+                
+                # Create connection object
+                connection = {
+                    "source": source_data,
+                    "destination": dest_data,
+                    "cable_length": cable_length,
+                    "cable_type": cable_type
+                }
+                
+                self.connections.append(connection)
+                
+                # Track node types
+                node_types_seen.add(source_data.get("node_type", ""))
+                node_types_seen.add(dest_data.get("node_type", ""))
+                
+                # Track location information based on format
+                if self.csv_format == "hierarchical":
+                    self._track_hierarchical_location(source_data, dest_data)
+                elif self.csv_format == "hostname_based":
+                    self._track_hostname_location(source_data, dest_data)
+            
+            # Create dynamic configurations for unknown node types
+            for node_type in node_types_seen:
+                if node_type and node_type not in self.shelf_unit_configs:
+                    self.analyze_and_create_dynamic_config(node_type, self.connections)
+            
+            # Set default shelf unit type
+            if not self.shelf_unit_type and node_types_seen:
+                self.shelf_unit_type = list(node_types_seen)[0]
+            elif not self.shelf_unit_type:
+                self.shelf_unit_type = "wh_galaxy"
+            
+            # Initialize templates
+            self.set_shelf_unit_type(self.shelf_unit_type)
+            
+            return self.connections
+            
+        except Exception as e:
+            print(f"Error in unified CSV parsing: {e}")
+            return []
 
-        except (IndexError, ValueError) as e:
-            return None
+    def _parse_connection_end(self, row_values, field_positions, end_type):
+        """Parse one end of a connection (source or destination)"""
+        data = {}
+        
+        # Extract available fields
+        if "hostname" in field_positions:
+            data["hostname"] = row_values[field_positions["hostname"]] if field_positions["hostname"] < len(row_values) else ""
+        
+        if "hall" in field_positions:
+            data["hall"] = row_values[field_positions["hall"]] if field_positions["hall"] < len(row_values) else ""
+        
+        if "aisle" in field_positions:
+            data["aisle"] = row_values[field_positions["aisle"]] if field_positions["aisle"] < len(row_values) else ""
+        
+        if "rack" in field_positions:
+            data["rack_num"] = self.normalize_rack(row_values[field_positions["rack"]]) if field_positions["rack"] < len(row_values) else "01"
+        
+        if "shelf_u" in field_positions:
+            data["shelf_u"] = self.normalize_shelf_u(row_values[field_positions["shelf_u"]]) if field_positions["shelf_u"] < len(row_values) else "01"
+        
+        if "tray" in field_positions:
+            data["tray"] = self.safe_int(row_values[field_positions["tray"]]) if field_positions["tray"] < len(row_values) else 1
+        
+        if "port" in field_positions:
+            data["port"] = self.safe_int(row_values[field_positions["port"]]) if field_positions["port"] < len(row_values) else 1
+        
+        if "label" in field_positions:
+            data["label"] = row_values[field_positions["label"]] if field_positions["label"] < len(row_values) else ""
+        
+        if "node_type" in field_positions:
+            data["node_type"] = self.normalize_node_type(row_values[field_positions["node_type"]]) if field_positions["node_type"] < len(row_values) else "wh_galaxy"
+        
+        # Generate label if not provided
+        if not data.get("label"):
+            if "rack_num" in data and "shelf_u" in data:
+                data["label"] = f"{data['rack_num']}{data['shelf_u']}-{data.get('tray', 1)}-{data.get('port', 1)}"
+            elif "hostname" in data:
+                data["label"] = f"{data['hostname']}-{data.get('tray', 1)}-{data.get('port', 1)}"
+            else:
+                data["label"] = f"{end_type}-{data.get('tray', 1)}-{data.get('port', 1)}"
+        
+        return data
+
+    def _track_hierarchical_location(self, source_data, dest_data):
+        """Track location information for hierarchical format"""
+        # Track rack units for layout
+        if "rack_num" in source_data and "shelf_u" in source_data:
+            self.rack_units.setdefault(source_data["rack_num"], set()).add(source_data["shelf_u"])
+        if "rack_num" in dest_data and "shelf_u" in dest_data:
+            self.rack_units.setdefault(dest_data["rack_num"], set()).add(dest_data["shelf_u"])
+        
+        # Track node types for each shelf unit
+        if "rack_num" in source_data and "shelf_u" in source_data:
+            shelf_key = f"{source_data['rack_num']}_{source_data['shelf_u']}"
+            node_type = source_data.get("node_type", "wh_galaxy")
+            self.mixed_node_types[shelf_key] = self.normalize_node_type(node_type)
+            self.node_locations[shelf_key] = {
+                "hostname": source_data.get("hostname", ""),
+                "hall": source_data.get("hall", ""),
+                "aisle": source_data.get("aisle", ""),
+                "rack_num": source_data["rack_num"],
+                "shelf_u": source_data["shelf_u"],
+            }
+        
+        if "rack_num" in dest_data and "shelf_u" in dest_data:
+            shelf_key = f"{dest_data['rack_num']}_{dest_data['shelf_u']}"
+            node_type = dest_data.get("node_type", "wh_galaxy")
+            self.mixed_node_types[shelf_key] = self.normalize_node_type(node_type)
+            self.node_locations[shelf_key] = {
+                "hostname": dest_data.get("hostname", ""),
+                "hall": dest_data.get("hall", ""),
+                "aisle": dest_data.get("aisle", ""),
+                "rack_num": dest_data["rack_num"],
+                "shelf_u": dest_data["shelf_u"],
+            }
+
+    def _track_hostname_location(self, source_data, dest_data):
+        """Track location information for hostname-based format"""
+        if "hostname" in source_data and source_data.get("hostname"):
+            node_type = source_data.get("node_type", "wh_galaxy")
+            self.shelf_units[source_data["hostname"]] = self.normalize_node_type(node_type)
+        if "hostname" in dest_data and dest_data.get("hostname"):
+            node_type = dest_data.get("node_type", "wh_galaxy")
+            self.shelf_units[dest_data["hostname"]] = self.normalize_node_type(node_type)
 
     def generate_node_id(self, node_type, *args):
         """Generate consistent node IDs for cytoscape elements"""
@@ -781,15 +889,20 @@ class NetworkCablingCytoscapeVisualizer:
 
     def create_hierarchical_nodes(self):
         """Create hierarchical compound nodes using templates for positioning"""
+        self.create_hierarchical_nodes_unified()
 
-        if self.csv_format == "20_column":
-            self.create_20_column_hierarchical_nodes()
-        elif self.csv_format == "8_column":
-            self.create_8_column_hierarchical_nodes()
+    def create_hierarchical_nodes_unified(self):
+        """Create hierarchical nodes using unified approach based on detected format"""
 
-    def create_20_column_hierarchical_nodes(self):
-        """Create full hierarchy nodes for 20-column format (racks -> shelves -> trays -> ports)"""
+        if self.csv_format == "hierarchical":
+            # Full hierarchy with racks
+            self._create_rack_hierarchy()
+        elif self.csv_format in ["hostname_based", "minimal"]:
+            # Shelf-only hierarchy
+            self._create_shelf_hierarchy()
 
+    def _create_rack_hierarchy(self):
+        """Create full hierarchy nodes (racks -> shelves -> trays -> ports)"""
         # Get sorted rack numbers for consistent ordering
         rack_numbers = sorted(self.rack_units.keys())
 
@@ -851,56 +964,11 @@ class NetworkCablingCytoscapeVisualizer:
                 )
                 self.nodes.append(shelf_node)
 
-                # Create trays based on this shelf's specific configuration
-                tray_count = shelf_config["tray_count"]
-                tray_ids = list(range(1, tray_count + 1))  # T1, T2, T3, T4 (or however many)
-                tray_positions = self.get_child_positions_for_parent("shelf", tray_ids, shelf_x, shelf_y)
+                # Create trays and ports
+                self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname)
 
-                for tray_id, tray_x, tray_y in tray_positions:
-                    # Create tray node - use the actual shelf_id
-                    tray_node_id = self.generate_node_id("tray", shelf_id, tray_id)
-                    tray_node = self.create_node_from_template(
-                        "tray",
-                        tray_node_id,
-                        shelf_id,
-                        f"T{tray_id}",
-                        tray_x,
-                        tray_y,
-                        rack_num=rack_num,
-                        shelf_u=shelf_u,
-                        tray=tray_id,
-                        shelf_node_type=shelf_node_type,
-                        hostname=hostname,
-                    )
-                    self.nodes.append(tray_node)
-
-                    # Create ports based on this shelf's specific configuration
-                    port_count = shelf_config["port_count"]
-                    port_ids = list(range(1, port_count + 1))  # P1, P2, ... (based on config)
-                    port_positions = self.get_child_positions_for_parent("tray", port_ids, tray_x, tray_y)
-
-                    for port_id, port_x, port_y in port_positions:
-                        # Create port node - use the actual shelf_id
-                        port_node_id = self.generate_node_id("port", shelf_id, tray_id, port_id)
-                        port_node = self.create_node_from_template(
-                            "port",
-                            port_node_id,
-                            tray_node_id,
-                            f"P{port_id}",
-                            port_x,
-                            port_y,
-                            rack_num=rack_num,
-                            shelf_u=shelf_u,
-                            tray=tray_id,
-                            port=port_id,
-                            shelf_node_type=shelf_node_type,
-                            hostname=hostname,
-                        )
-                        self.nodes.append(port_node)
-
-    def create_8_column_hierarchical_nodes(self):
-        """Create shelf-only hierarchy nodes for 8-column format (shelves -> trays -> ports)"""
-
+    def _create_shelf_hierarchy(self):
+        """Create shelf-only hierarchy nodes (shelves -> trays -> ports)"""
         # Get sorted hostnames for consistent ordering
         hostnames = sorted(self.shelf_units.keys())
 
@@ -930,118 +998,74 @@ class NetworkCablingCytoscapeVisualizer:
             )
             self.nodes.append(shelf_node)
 
-            # Create trays based on this shelf's specific configuration
-            tray_count = shelf_config["tray_count"]
-            tray_ids = list(range(1, tray_count + 1))  # T1, T2, T3, T4 (or however many)
-            tray_positions = self.get_child_positions_for_parent("shelf", tray_ids, shelf_x, shelf_y)
+            # Create trays and ports
+            self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname)
 
-            for tray_id, tray_x, tray_y in tray_positions:
-                # Create tray node
-                tray_node_id = self.generate_node_id("tray", hostname, tray_id)
-                tray_node = self.create_node_from_template(
-                    "tray",
+    def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname):
+        """Create trays and ports for a shelf"""
+        # Create trays based on this shelf's specific configuration
+        tray_count = shelf_config["tray_count"]
+        tray_ids = list(range(1, tray_count + 1))  # T1, T2, T3, T4 (or however many)
+        tray_positions = self.get_child_positions_for_parent("shelf", tray_ids, shelf_x, shelf_y)
+
+        for tray_id, tray_x, tray_y in tray_positions:
+            # Create tray node
+            tray_node_id = self.generate_node_id("tray", shelf_id, tray_id)
+            tray_node = self.create_node_from_template(
+                "tray",
+                tray_node_id,
+                shelf_id,
+                f"T{tray_id}",
+                tray_x,
+                tray_y,
+                rack_num=rack_num,
+                shelf_u=shelf_u,
+                tray=tray_id,
+                shelf_node_type=shelf_node_type,
+                hostname=hostname,
+            )
+            self.nodes.append(tray_node)
+
+            # Create ports based on this shelf's specific configuration
+            port_count = shelf_config["port_count"]
+            port_ids = list(range(1, port_count + 1))  # P1, P2, ... (based on config)
+            port_positions = self.get_child_positions_for_parent("tray", port_ids, tray_x, tray_y)
+
+            for port_id, port_x, port_y in port_positions:
+                # Create port node
+                port_node_id = self.generate_node_id("port", shelf_id, tray_id, port_id)
+                port_node = self.create_node_from_template(
+                    "port",
+                    port_node_id,
                     tray_node_id,
-                    shelf_id,
-                    f"T{tray_id}",
-                    tray_x,
-                    tray_y,
+                    f"P{port_id}",
+                    port_x,
+                    port_y,
+                    rack_num=rack_num,
+                    shelf_u=shelf_u,
                     tray=tray_id,
+                    port=port_id,
                     shelf_node_type=shelf_node_type,
+                    hostname=hostname,
                 )
-                self.nodes.append(tray_node)
-
-                # Create ports based on this shelf's specific configuration
-                port_count = shelf_config["port_count"]
-                port_ids = list(range(1, port_count + 1))  # P1, P2, ... (based on config)
-                port_positions = self.get_child_positions_for_parent("tray", port_ids, tray_x, tray_y)
-
-                for port_id, port_x, port_y in port_positions:
-                    # Create port node
-                    port_node_id = self.generate_node_id("port", hostname, tray_id, port_id)
-                    port_node = self.create_node_from_template(
-                        "port",
-                        port_node_id,
-                        tray_node_id,
-                        f"P{port_id}",
-                        port_x,
-                        port_y,
-                        tray=tray_id,
-                        port=port_id,
-                        shelf_node_type=shelf_node_type,
-                    )
-                    self.nodes.append(port_node)
+                self.nodes.append(port_node)
 
     def create_connection_edges(self):
         """Create edges representing connections between ports"""
-
         for i, connection in enumerate(self.connections, 1):
-            if self.csv_format == "20_column":
-                # 20-column format: rack/shelf/tray/port hierarchy
-                src_shelf_label = f"{connection['source']['rack_num']}_U{connection['source']['shelf_u']}"
-                src_port_id = self.generate_node_id(
-                    "port", src_shelf_label, connection["source"]["tray"], connection["source"]["port"]
-                )
-                dst_shelf_label = f"{connection['destination']['rack_num']}_U{connection['destination']['shelf_u']}"
-                dst_port_id = self.generate_node_id(
-                    "port", dst_shelf_label, connection["destination"]["tray"], connection["destination"]["port"]
-                )
-            elif self.csv_format == "8_column":
-                # 8-column format: hostname/tray/port hierarchy (no racks)
-                src_port_id = self.generate_node_id(
-                    "port", connection["source"]["hostname"], connection["source"]["tray"], connection["source"]["port"]
-                )
-                dst_port_id = self.generate_node_id(
-                    "port",
-                    connection["destination"]["hostname"],
-                    connection["destination"]["tray"],
-                    connection["destination"]["port"],
-                )
-
-            # Determine connection color based on whether ports are on the same node
-            # Handle different CSV formats
-            if self.csv_format == "20_column":
-                # 20-column format: compare rack_num and shelf_u
-                source_node_id = f"{connection['source']['rack_num']}_{connection['source']['shelf_u']}"
-                dest_node_id = f"{connection['destination']['rack_num']}_{connection['destination']['shelf_u']}"
-            elif self.csv_format == "8_column":
-                # 8-column format: compare hostnames
-                source_node_id = connection["source"]["hostname"]
-                dest_node_id = connection["destination"]["hostname"]
-            else:
-                # Fallback: assume different nodes
-                source_node_id = "unknown_source"
-                dest_node_id = "unknown_dest"
-
-            if source_node_id == dest_node_id:
-                color = self.intra_node_color  # Same node - green
-            else:
-                color = self.inter_node_color  # Different nodes - blue
-
-            # Calculate alternating direction properties
-            # Alternate between positive and negative control point distance
-            direction_multiplier = 1
-
-            # Base control point distance (can be adjusted)
-            base_distance = 60
-            control_point_distance = base_distance * direction_multiplier
-
-            # Create alternating control point arrays for unbundled-bezier
-            control_distances = [control_point_distance, -control_point_distance]
-            control_weights = [0.25, 0.75]
-
-            #
-
-            # Generate random label position along the edge (0.2 to 0.8 to avoid endpoints)
-            import random
-
-            random.seed(i)  # Use connection index as seed for consistent positioning
-            label_position = 0.2 + (random.random() * 0.6)  # Random value between 0.2 and 0.8
-
-            # Create edge with comprehensive connection info
-            edge_id = f"connection_{i}"
+            # Generate port IDs based on format
+            src_port_id, dst_port_id = self._generate_port_ids(connection)
+            
+            # Determine connection color
+            color = self._get_connection_color(connection)
+            
+            # Generate edge styling properties
+            edge_props = self._generate_edge_properties(i)
+            
+            # Create edge data
             edge_data = {
                 "data": {
-                    "id": edge_id,
+                    "id": f"connection_{i}",
                     "source": src_port_id,
                     "target": dst_port_id,
                     "label": f"#{i}",
@@ -1049,22 +1073,64 @@ class NetworkCablingCytoscapeVisualizer:
                     "cable_type": connection["cable_type"],
                     "connection_number": i,
                     "color": color,
-                    "source_info": connection["source"]["label"],  # Use CSV label
-                    "destination_info": connection["destination"]["label"],  # Use CSV label
-                    # Add hostname info if available (20-column format)
+                    "source_info": connection["source"]["label"],
+                    "destination_info": connection["destination"]["label"],
                     "source_hostname": connection["source"].get("hostname", ""),
                     "destination_hostname": connection["destination"].get("hostname", ""),
-                    # Alternating direction properties
-                    "control_point_distances": control_distances,
-                    "control_point_weights": control_weights,
-                    "direction_multiplier": direction_multiplier,
-                    # Random label positioning
-                    "label_position": label_position,
+                    **edge_props,
                 },
                 "classes": "connection",
             }
 
             self.edges.append(edge_data)
+
+    def _generate_port_ids(self, connection):
+        """Generate source and destination port IDs based on CSV format"""
+        if self.csv_format == "hierarchical":
+            # Hierarchical format: rack/shelf/tray/port hierarchy
+            src_shelf_label = f"{connection['source']['rack_num']}_U{connection['source']['shelf_u']}"
+            dst_shelf_label = f"{connection['destination']['rack_num']}_U{connection['destination']['shelf_u']}"
+            src_port_id = self.generate_node_id("port", src_shelf_label, connection["source"]["tray"], connection["source"]["port"])
+            dst_port_id = self.generate_node_id("port", dst_shelf_label, connection["destination"]["tray"], connection["destination"]["port"])
+        else:
+            # Hostname-based or minimal format: hostname/tray/port hierarchy
+            src_hostname = connection["source"].get("hostname", "unknown")
+            dst_hostname = connection["destination"].get("hostname", "unknown")
+            src_port_id = self.generate_node_id("port", src_hostname, connection["source"]["tray"], connection["source"]["port"])
+            dst_port_id = self.generate_node_id("port", dst_hostname, connection["destination"]["tray"], connection["destination"]["port"])
+        
+        return src_port_id, dst_port_id
+
+    def _get_connection_color(self, connection):
+        """Determine connection color based on whether ports are on the same node"""
+        if self.csv_format == "hierarchical":
+            source_node_id = f"{connection['source']['rack_num']}_{connection['source']['shelf_u']}"
+            dest_node_id = f"{connection['destination']['rack_num']}_{connection['destination']['shelf_u']}"
+        elif self.csv_format in ["hostname_based", "minimal"]:
+            source_node_id = connection["source"].get("hostname", "unknown")
+            dest_node_id = connection["destination"].get("hostname", "unknown")
+        else:
+            source_node_id = "unknown_source"
+            dest_node_id = "unknown_dest"
+
+        return self.intra_node_color if source_node_id == dest_node_id else self.inter_node_color
+
+    def _generate_edge_properties(self, connection_index):
+        """Generate edge styling properties"""
+        # Generate random label position along the edge
+        random.seed(connection_index)  # Use connection index as seed for consistent positioning
+        label_position = self.LABEL_POSITION_MIN + (random.random() * (self.LABEL_POSITION_MAX - self.LABEL_POSITION_MIN))
+        
+        # Create control point arrays for edge routing
+        control_point_distance = self.BASE_CONTROL_DISTANCE
+        control_distances = [control_point_distance, -control_point_distance]
+        
+        return {
+            "control_point_distances": control_distances,
+            "control_point_weights": self.CONTROL_WEIGHTS,
+            "direction_multiplier": 1,
+            "label_position": label_position,
+        }
 
     def generate_cytoscape_data(self):
         """Generate complete cytoscape.js data structure"""
@@ -1097,10 +1163,10 @@ class NetworkCablingCytoscapeVisualizer:
             },
         }
 
-        # Add mixed node types info for 20-column format
-        if self.csv_format == "20_column" and self.mixed_node_types:
+        # Add mixed node types info for hierarchical format
+        if self.csv_format == "hierarchical" and self.mixed_node_types:
             cytoscape_data["metadata"]["mixed_node_types"] = self.mixed_node_types
-        elif self.csv_format == "8_column" and self.shelf_units:
+        elif self.csv_format in ["hostname_based", "minimal"] and self.shelf_units:
             cytoscape_data["metadata"]["shelf_node_types"] = self.shelf_units
 
         return cytoscape_data

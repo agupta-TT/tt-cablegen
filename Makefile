@@ -10,6 +10,9 @@ build:
 run: build
 	docker run --platform linux/amd64 --name tt-cablegen -p 5000:5000 -e LOG_LEVEL=$${LOG_LEVEL:-INFO} -d tt-cablegen
 
+run-dev: build
+	docker run --platform linux/amd64 --name tt-cablegen -v $(shell git rev-parse --show-toplevel):/app -p 5000:5000 -e LOG_LEVEL=$${LOG_LEVEL:-INFO} -d tt-cablegen 
+
 run-debug: build
 	docker run --platform linux/amd64 -p 5000:5000 -e LOG_LEVEL=DEBUG -it tt-cablegen
 

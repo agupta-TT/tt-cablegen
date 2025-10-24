@@ -2657,19 +2657,13 @@ async function generateCablingGuide() {
         return;
     }
 
-    // Check for nodes without hostnames and show warning
-    const nodesWithoutHostname = validateHostnames();
-    if (nodesWithoutHostname.length > 0) {
-        showExportStatus(`Warning: The following nodes are missing hostnames: ${nodesWithoutHostname.join(', ')}. FSD generation will proceed but may have incomplete data.`, 'warning');
-    }
-
     const generateBtn = document.getElementById('generateCablingGuideBtn');
     const originalText = generateBtn.textContent;
 
     try {
         generateBtn.textContent = '⏳ Generating...';
         generateBtn.disabled = true;
-        showExportStatus('Generating cabling guide and FSD...', 'info');
+        showExportStatus('Generating cabling guide...', 'info');
 
         // Get current cytoscape data
         const cytoscapeData = {
@@ -2688,50 +2682,36 @@ async function generateCablingGuide() {
             },
             body: JSON.stringify({
                 cytoscape_data: cytoscapeData,
-                input_prefix: inputPrefix
+                input_prefix: inputPrefix,
+                generate_type: 'cabling_guide'
             })
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Generation failed');
+            throw new Error(formatErrorMessage(errorData));
         }
 
         const result = await response.json();
 
         if (result.success) {
-            // Download the generated files directly from content
+            // Download the generated CSV file
             if (result.cabling_guide_content) {
-                const blob1 = new Blob([result.cabling_guide_content], { type: 'text/csv' });
-                const url1 = window.URL.createObjectURL(blob1);
-                const a1 = document.createElement('a');
-                a1.href = url1;
-                a1.download = result.cabling_guide_filename;
-                a1.style.display = 'none';
-                document.body.appendChild(a1);
-                a1.click();
-                document.body.removeChild(a1);
-                window.URL.revokeObjectURL(url1);
-            } else {
+                const blob = new Blob([result.cabling_guide_content], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = result.cabling_guide_filename;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
             }
 
-            if (result.fsd_content) {
-                const blob2 = new Blob([result.fsd_content], { type: 'text/plain' });
-                const url2 = window.URL.createObjectURL(blob2);
-                const a2 = document.createElement('a');
-                a2.href = url2;
-                a2.download = result.fsd_filename;
-                a2.style.display = 'none';
-                document.body.appendChild(a2);
-                a2.click();
-                document.body.removeChild(a2);
-                window.URL.revokeObjectURL(url2);
-            } else {
-            }
-
-            showExportStatus('Cabling guide and FSD generated successfully!', 'success');
+            showExportStatus('Cabling guide generated successfully!', 'success');
         } else {
-            throw new Error(result.error || 'Unknown error occurred');
+            throw new Error(formatErrorMessage(result));
         }
 
     } catch (error) {
@@ -2743,10 +2723,146 @@ async function generateCablingGuide() {
     }
 }
 
+async function generateFSD() {
+    if (typeof cy === 'undefined' || !cy) {
+        showExportStatus('No visualization data available', 'error');
+        return;
+    }
+
+    // Check for nodes without hostnames and show warning
+    const nodesWithoutHostname = validateHostnames();
+    if (nodesWithoutHostname.length > 0) {
+        showExportStatus(`Warning: The following nodes are missing hostnames: ${nodesWithoutHostname.join(', ')}. FSD generation will proceed but may have incomplete data.`, 'warning');
+    }
+
+    const generateBtn = document.getElementById('generateFSDBtn');
+    const originalText = generateBtn.textContent;
+
+    try {
+        generateBtn.textContent = '⏳ Generating...';
+        generateBtn.disabled = true;
+        showExportStatus('Generating FSD...', 'info');
+
+        // Get current cytoscape data
+        const cytoscapeData = {
+            elements: cy.elements().jsons()
+        };
+
+        // Get input prefix for the generator
+        const customFileName = document.getElementById('exportFileNameInput').value.trim();
+        const inputPrefix = customFileName || 'network_topology';
+
+        // Send to server for processing
+        const response = await fetch('/generate_cabling_guide', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                cytoscape_data: cytoscapeData,
+                input_prefix: inputPrefix,
+                generate_type: 'fsd'
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(formatErrorMessage(errorData));
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Download the generated textproto file
+            if (result.fsd_content) {
+                const blob = new Blob([result.fsd_content], { type: 'text/plain' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = result.fsd_filename;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }
+
+            showExportStatus('FSD generated successfully!', 'success');
+        } else {
+            throw new Error(formatErrorMessage(result));
+        }
+
+    } catch (error) {
+        console.error('Generation error:', error);
+        showExportStatus(`Generation failed: ${error.message}`, 'error');
+    } finally {
+        generateBtn.textContent = originalText;
+        generateBtn.disabled = false;
+    }
+}
+
+function formatErrorMessage(errorData) {
+    let errorMessage = errorData.error || 'Unknown error occurred';
+
+    // Add error type context
+    if (errorData.error_type) {
+        switch (errorData.error_type) {
+            case 'generation_failed':
+                errorMessage = `🚫 Cabling Generator Failed\n\n${errorMessage}`;
+                if (errorData.exit_code) {
+                    errorMessage += `\n\nExit Code: ${errorData.exit_code}`;
+                }
+                break;
+            case 'timeout':
+                errorMessage = `⏰ Generator Timeout\n\n${errorMessage}`;
+                if (errorData.command) {
+                    errorMessage += `\n\nCommand: ${errorData.command}`;
+                }
+                break;
+            case 'execution_error':
+                errorMessage = `💥 Execution Error\n\n${errorMessage}`;
+                if (errorData.command) {
+                    errorMessage += `\n\nCommand: ${errorData.command}`;
+                }
+                break;
+            case 'file_not_found':
+                errorMessage = `📁 File Not Found\n\n${errorMessage}`;
+                if (errorData.expected_path) {
+                    errorMessage += `\n\nExpected Path: ${errorData.expected_path}`;
+                }
+                break;
+            case 'file_read_error':
+                errorMessage = `📖 File Read Error\n\n${errorMessage}`;
+                break;
+            default:
+                errorMessage = `❌ ${errorData.error_type || 'Error'}\n\n${errorMessage}`;
+        }
+    }
+
+    // Add stdout/stderr if available
+    if (errorData.stdout || errorData.stderr) {
+        errorMessage += '\n\n--- Generator Output ---';
+        if (errorData.stdout) {
+            errorMessage += `\n\nSTDOUT:\n${errorData.stdout}`;
+        }
+        if (errorData.stderr) {
+            errorMessage += `\n\nSTDERR:\n${errorData.stderr}`;
+        }
+    }
+
+    return errorMessage;
+}
+
 function showExportStatus(message, type) {
     const statusDiv = document.getElementById('exportStatus');
     statusDiv.style.display = 'block';
-    statusDiv.textContent = message;
+
+    // Handle multi-line messages with proper formatting
+    if (message.includes('\n')) {
+        statusDiv.innerHTML = message.replace(/\n/g, '<br>');
+    } else {
+        statusDiv.textContent = message;
+    }
 
     // Set colors based on type
     if (type === 'success') {

@@ -120,7 +120,7 @@ cmake_args+=("-DPython3_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.
 cmake_args+=("-DENABLE_FAKE_KERNELS_TARGET=OFF")
 
 # Force a generic x86-64 architecture to avoid illegal instructions on emulated environments
-cmake_args+=('-DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -march=x86-64"')
+# cmake_args+=('-DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -march=x86-64"')
 
 echo "INFO: Configuring Project for scaleout tools"
 echo "INFO: Running: cmake "${cmake_args[@]}""
