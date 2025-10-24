@@ -11,7 +11,6 @@ acme_shared_zone zone=acme_shared:1M;
 acme_issuer vault {
     uri         ${VAULT_ACME_DIRECTORY_URL};
     contact     ${VAULT_ACME_CONTACT};
-    state_path  /var/cache/nginx/acme-vault;
     accept_terms_of_service;
 }
 

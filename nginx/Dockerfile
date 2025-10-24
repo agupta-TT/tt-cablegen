@@ -53,10 +53,6 @@ RUN apt-get update && apt-get install --yes --no-install-recommends --no-install
 # Copy nginx HTTP ACME module to release image
 COPY --from=nginx-http-acme-mod /nginx/objs/ngx_http_acme_module.so /usr/lib/nginx/modules/
 
-# Create ACME state directory
-RUN mkdir -p /var/cache/nginx/acme-vault \
- && chown -R nginx:nginx /var/cache/nginx
-
 # Copy main nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
@@ -68,7 +64,7 @@ EXPOSE 80/tcp 443/tcp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
+    CMD curl -f http://localhost/ || exit 1
 
 # Start Nginx in the foreground
 CMD ["nginx", "-g", "daemon off;"]

@@ -56,7 +56,6 @@ services:
       - VAULT_ACME_CONTACT=${VAULT_ACME_CONTACT:-it@yourcompany.com}
       - FQDN=${FQDN:-cablegen.yourcompany.com}
     volumes:
-      - nginx-acme-cache:/var/cache/nginx/acme-vault
       - nginx-logs:/var/log/nginx
 
       # Mount Ubuntu standard CA certificates to trust enterprise roots.
@@ -80,7 +79,5 @@ networks:
     name: cablegen-network
 
 volumes:
-  nginx-acme-cache:
-    name: cablegen-nginx-acme-cache
   nginx-logs:
     name: cablegen-nginx-logs
