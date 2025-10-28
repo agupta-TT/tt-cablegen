@@ -662,8 +662,11 @@ class NetworkCablingCytoscapeVisualizer:
                     # Single connection format - assume first half is source, second half is destination
                     mid_point = len(row_values) // 2
                     source_data = self._parse_connection_end(row_values[:mid_point], field_positions, "source")
-                    dest_data = self._parse_connection_end(row_values[mid_point:], 
-                                                         {k: v-mid_point for k, v in field_positions.items()}, "destination")
+                    dest_data = self._parse_connection_end(
+                        row_values[mid_point:], 
+                        {k: v - mid_point for k, v in field_positions.items() if v >= 0 and v - mid_point >= 0}, 
+                        "destination"
+                    )
                 
                 # Extract cable information
                 cable_length = "Unknown"
