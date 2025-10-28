@@ -2857,12 +2857,8 @@ function showExportStatus(message, type) {
     const statusDiv = document.getElementById('exportStatus');
     statusDiv.style.display = 'block';
 
-    // Handle multi-line messages with proper formatting
-    if (message.includes('\n')) {
-        statusDiv.innerHTML = message.replace(/\n/g, '<br>');
-    } else {
-        statusDiv.textContent = message;
-    }
+    // Always use textContent to avoid XSS; preserve line breaks with CSS (white-space: pre-line)
+    statusDiv.textContent = message;
 
     // Set colors based on type
     if (type === 'success') {
