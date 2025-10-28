@@ -512,7 +512,7 @@ class NetworkCablingCytoscapeVisualizer:
                 header_lower = header.lower()
                 for field_name, possible_headers in field_mappings.items():
                     # Use exact matching to avoid false positives
-                    if header_lower in possible_headers:
+                    if any(possible in header_lower for possible in possible_headers):
                         # Store all positions for each field name
                         if field_name not in field_positions:
                             field_positions[field_name] = []
