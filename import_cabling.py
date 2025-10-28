@@ -641,10 +641,14 @@ class NetworkCablingCytoscapeVisualizer:
                 else:
                     # Single connection format - check first half for source, second half for destination
                     mid_point = len(row_values) // 2
-                    source_tray = row_values[field_positions.get("tray", -1)] if field_positions.get("tray", -1) < len(row_values) else ""
-                    source_port = row_values[field_positions.get("port", -1)] if field_positions.get("port", -1) < len(row_values) else ""
-                    dest_tray = row_values[field_positions.get("tray", -1) + mid_point] if field_positions.get("tray", -1) + mid_point < len(row_values) else ""
-                    dest_port = row_values[field_positions.get("port", -1) + mid_point] if field_positions.get("port", -1) + mid_point < len(row_values) else ""
+                    source_tray_idx = field_positions.get("tray", -1)
+                    source_port_idx = field_positions.get("port", -1)
+                    dest_tray_idx = source_tray_idx + mid_point if source_tray_idx != -1 else -1
+                    dest_port_idx = source_port_idx + mid_point if source_port_idx != -1 else -1
+                    source_tray = row_values[source_tray_idx] if source_tray_idx != -1 and source_tray_idx < len(row_values) else ""
+                    source_port = row_values[source_port_idx] if source_port_idx != -1 and source_port_idx < len(row_values) else ""
+                    dest_tray = row_values[dest_tray_idx] if dest_tray_idx != -1 and dest_tray_idx < len(row_values) else ""
+                    dest_port = row_values[dest_port_idx] if dest_port_idx != -1 and dest_port_idx < len(row_values) else ""
                 
                 # Skip rows where tray or port are not filled
                 if not source_tray or not source_port or not dest_tray or not dest_port:
