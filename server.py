@@ -224,16 +224,16 @@ def generate_cabling_guide():
 
             # Create temporary output directory
             with tempfile.TemporaryDirectory() as temp_output_dir:
-                # Change to the temp directory for output
-                original_cwd = os.getcwd()
-                os.chdir(temp_output_dir)
-
+                # Don't change directory - let the C++ tool create out/scaleout in temp_output_dir
+                # We'll pass the temp_output_dir as working directory to subprocess
+                
                 try:
-                    # Run the cabling generator with cxxopts structure
-                    cmd = [generator_path, "-c", cabling_path, "-d", deployment_path, "-o", input_prefix]
+                    # Run the cabling generator with proper long-form arguments (equals-separated format)
+                    cmd = [generator_path, f"--cluster={cabling_path}", f"--deployment={deployment_path}", f"--output={input_prefix}"]
                     print(f"Running command: {' '.join(cmd)}")  # Debug logging
+                    print(f"Working directory: {temp_output_dir}")  # Debug logging
 
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=temp_output_dir)
 
                     if result.returncode != 0:
                         # Enhanced error reporting with both stdout and stderr
@@ -256,8 +256,8 @@ def generate_cabling_guide():
                             "stderr": result.stderr
                         }), 500
 
-                    # Look for generated files
-                    output_dir = Path("out/scaleout")
+                    # Look for generated files in the temp output directory
+                    output_dir = Path(temp_output_dir) / "out" / "scaleout"
                     cabling_guide_path = output_dir / f"cabling_guide_{input_prefix}.csv"
                     fsd_path = output_dir / f"factory_system_descriptor_{input_prefix}.textproto"
 
@@ -320,7 +320,7 @@ def generate_cabling_guide():
                     }), 500
 
                 finally:
-                    os.chdir(original_cwd)
+                    pass  # No need to change directory back since we used cwd parameter
 
         finally:
             # Clean up temporary descriptor files
