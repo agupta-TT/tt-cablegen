@@ -175,7 +175,7 @@ def export_deployment_descriptor():
 
 @app.route("/generate_cabling_guide", methods=["POST"])
 def generate_cabling_guide():
-    """Generate CablingGuide CSV and FSD using the cabling generator"""
+    """Generate CablingGuide CSV and/or FSD using the cabling generator"""
     import subprocess
     import tempfile
     import os
@@ -189,6 +189,7 @@ def generate_cabling_guide():
 
         cytoscape_data = data["cytoscape_data"]
         input_prefix = data["input_prefix"]
+        generate_type = data.get("generate_type", "both")  # 'cabling_guide', 'fsd', or 'both'
 
         # Generate temporary files for descriptors
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False) as cabling_file:
@@ -223,44 +224,103 @@ def generate_cabling_guide():
 
             # Create temporary output directory
             with tempfile.TemporaryDirectory() as temp_output_dir:
-                # Change to the temp directory for output
-                original_cwd = os.getcwd()
-                os.chdir(temp_output_dir)
-
+                # Don't change directory - let the C++ tool create out/scaleout in temp_output_dir
+                # We'll pass the temp_output_dir as working directory to subprocess
+                
                 try:
-                    # Run the cabling generator
-                    cmd = [generator_path, cabling_path, deployment_path, input_prefix]
+                    # Run the cabling generator with proper long-form arguments (equals-separated format)
+                    cmd = [generator_path, f"--cluster={cabling_path}", f"--deployment={deployment_path}", f"--output={input_prefix}"]
+                    print(f"Running command: {' '.join(cmd)}")  # Debug logging
+                    print(f"Working directory: {temp_output_dir}")  # Debug logging
 
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=temp_output_dir)
 
                     if result.returncode != 0:
-                        return jsonify({"success": False, "error": f"Cabling generator failed: {result.stderr}"}), 500
+                        # Enhanced error reporting with both stdout and stderr
+                        error_details = []
+                        if result.stdout:
+                            error_details.append(f"STDOUT: {result.stdout}")
+                        if result.stderr:
+                            error_details.append(f"STDERR: {result.stderr}")
+                        
+                        error_message = f"Cabling generator failed (exit code {result.returncode})"
+                        if error_details:
+                            error_message += f"\n\nDetails:\n" + "\n".join(error_details)
+                        
+                        return jsonify({
+                            "success": False, 
+                            "error": error_message,
+                            "error_type": "generation_failed",
+                            "exit_code": result.returncode,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr
+                        }), 500
 
-                    # Look for generated files
-                    output_dir = Path("out/scaleout")
+                    # Look for generated files in the temp output directory
+                    output_dir = Path(temp_output_dir) / "out" / "scaleout"
                     cabling_guide_path = output_dir / f"cabling_guide_{input_prefix}.csv"
                     fsd_path = output_dir / f"factory_system_descriptor_{input_prefix}.textproto"
 
-                    if not cabling_guide_path.exists() or not fsd_path.exists():
-                        return jsonify({"success": False, "error": "Generated files not found"}), 500
+                    # Prepare response based on generate_type
+                    response_data = {"success": True}
 
-                    # Read the generated files
-                    cabling_content = cabling_guide_path.read_text()
-                    fsd_content = fsd_path.read_text()
+                    if generate_type in ["cabling_guide", "both"]:
+                        if not cabling_guide_path.exists():
+                            return jsonify({
+                                "success": False, 
+                                "error": f"Cabling guide file not found at {cabling_guide_path}",
+                                "error_type": "file_not_found",
+                                "expected_path": str(cabling_guide_path)
+                            }), 500
+                        try:
+                            cabling_content = cabling_guide_path.read_text()
+                            response_data["cabling_guide_content"] = cabling_content
+                            response_data["cabling_guide_filename"] = f"cabling_guide_{input_prefix}.csv"
+                        except Exception as e:
+                            return jsonify({
+                                "success": False, 
+                                "error": f"Failed to read cabling guide file: {str(e)}",
+                                "error_type": "file_read_error"
+                            }), 500
 
-                    # Return file content directly for download
-                    return jsonify(
-                        {
-                            "success": True,
-                            "cabling_guide_content": cabling_content,
-                            "cabling_guide_filename": f"cabling_guide_{input_prefix}.csv",
-                            "fsd_content": fsd_content,
-                            "fsd_filename": f"factory_system_descriptor_{input_prefix}.textproto",
-                        }
-                    )
+                    if generate_type in ["fsd", "both"]:
+                        if not fsd_path.exists():
+                            return jsonify({
+                                "success": False, 
+                                "error": f"FSD file not found at {fsd_path}",
+                                "error_type": "file_not_found",
+                                "expected_path": str(fsd_path)
+                            }), 500
+                        try:
+                            fsd_content = fsd_path.read_text()
+                            response_data["fsd_content"] = fsd_content
+                            response_data["fsd_filename"] = f"factory_system_descriptor_{input_prefix}.textproto"
+                        except Exception as e:
+                            return jsonify({
+                                "success": False, 
+                                "error": f"Failed to read FSD file: {str(e)}",
+                                "error_type": "file_read_error"
+                            }), 500
+
+                    return jsonify(response_data)
+
+                except subprocess.TimeoutExpired as e:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Cabling generator timed out after 60 seconds",
+                        "error_type": "timeout",
+                        "command": ' '.join(cmd)
+                    }), 500
+                except Exception as e:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Failed to run cabling generator: {str(e)}",
+                        "error_type": "execution_error",
+                        "command": ' '.join(cmd)
+                    }), 500
 
                 finally:
-                    os.chdir(original_cwd)
+                    pass  # No need to change directory back since we used cwd parameter
 
         finally:
             # Clean up temporary descriptor files
