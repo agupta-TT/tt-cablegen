@@ -512,7 +512,7 @@ class NetworkCablingCytoscapeVisualizer:
                 header_lower = header.lower()
                 for field_name, possible_headers in field_mappings.items():
                     # Use exact matching to avoid false positives
-                    if any(possible in header_lower for possible in possible_headers):
+                    if header_lower in possible_headers:
                         # Store all positions for each field name
                         if field_name not in field_positions:
                             field_positions[field_name] = []
@@ -630,25 +630,17 @@ class NetworkCablingCytoscapeVisualizer:
                 # Validate tray and port fields before parsing to avoid creating fake connections
                 if has_source_dest:
                     # Check if source and destination tray/port fields are filled
-                    source_tray_idx = source_fields.get("tray", -1)
-                    source_tray = row_values[source_tray_idx] if 0 <= source_tray_idx < len(row_values) else ""
-                    source_port_idx = source_fields.get("port", -1)
-                    source_port = row_values[source_port_idx] if 0 <= source_port_idx < len(row_values) else ""
-                    dest_tray_idx = dest_fields.get("tray", -1)
-                    dest_tray = row_values[dest_tray_idx] if 0 <= dest_tray_idx < len(row_values) else ""
-                    dest_port_idx = dest_fields.get("port", -1)
-                    dest_port = row_values[dest_port_idx] if 0 <= dest_port_idx < len(row_values) else ""
+                    source_tray = row_values[source_fields.get("tray", -1)] if source_fields.get("tray", -1) < len(row_values) else ""
+                    source_port = row_values[source_fields.get("port", -1)] if source_fields.get("port", -1) < len(row_values) else ""
+                    dest_tray = row_values[dest_fields.get("tray", -1)] if dest_fields.get("tray", -1) < len(row_values) else ""
+                    dest_port = row_values[dest_fields.get("port", -1)] if dest_fields.get("port", -1) < len(row_values) else ""
                 else:
                     # Single connection format - check first half for source, second half for destination
                     mid_point = len(row_values) // 2
-                    source_tray_idx = field_positions.get("tray", -1)
-                    source_port_idx = field_positions.get("port", -1)
-                    dest_tray_idx = source_tray_idx + mid_point if source_tray_idx != -1 else -1
-                    dest_port_idx = source_port_idx + mid_point if source_port_idx != -1 else -1
-                    source_tray = row_values[source_tray_idx] if source_tray_idx != -1 and source_tray_idx < len(row_values) else ""
-                    source_port = row_values[source_port_idx] if source_port_idx != -1 and source_port_idx < len(row_values) else ""
-                    dest_tray = row_values[dest_tray_idx] if dest_tray_idx != -1 and dest_tray_idx < len(row_values) else ""
-                    dest_port = row_values[dest_port_idx] if dest_port_idx != -1 and dest_port_idx < len(row_values) else ""
+                    source_tray = row_values[field_positions.get("tray", -1)] if field_positions.get("tray", -1) < len(row_values) else ""
+                    source_port = row_values[field_positions.get("port", -1)] if field_positions.get("port", -1) < len(row_values) else ""
+                    dest_tray = row_values[field_positions.get("tray", -1) + mid_point] if field_positions.get("tray", -1) + mid_point < len(row_values) else ""
+                    dest_port = row_values[field_positions.get("port", -1) + mid_point] if field_positions.get("port", -1) + mid_point < len(row_values) else ""
                 
                 # Skip rows where tray or port are not filled
                 if not source_tray or not source_port or not dest_tray or not dest_port:
@@ -662,11 +654,8 @@ class NetworkCablingCytoscapeVisualizer:
                     # Single connection format - assume first half is source, second half is destination
                     mid_point = len(row_values) // 2
                     source_data = self._parse_connection_end(row_values[:mid_point], field_positions, "source")
-                    dest_data = self._parse_connection_end(
-                        row_values[mid_point:], 
-                        {k: v - mid_point for k, v in field_positions.items() if v >= 0 and v - mid_point >= 0}, 
-                        "destination"
-                    )
+                    dest_data = self._parse_connection_end(row_values[mid_point:], 
+                                                         {k: v-mid_point for k, v in field_positions.items()}, "destination")
                 
                 # Extract cable information
                 cable_length = "Unknown"
