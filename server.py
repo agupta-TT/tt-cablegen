@@ -229,8 +229,8 @@ def generate_cabling_guide():
                 os.chdir(temp_output_dir)
 
                 try:
-                    # Run the cabling generator
-                    cmd = [generator_path, cabling_path, deployment_path, input_prefix]
+                    # Run the cabling generator with cxxopts structure
+                    cmd = [generator_path, "-c", cabling_path, "-d", deployment_path, "-o", input_prefix]
                     print(f"Running command: {' '.join(cmd)}")  # Debug logging
 
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
