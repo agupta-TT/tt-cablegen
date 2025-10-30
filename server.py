@@ -193,6 +193,7 @@ def generate_cabling_guide():
         cytoscape_data = data["cytoscape_data"]
         input_prefix = data["input_prefix"]
         generate_type = data.get("generate_type", "both")  # 'cabling_guide', 'fsd', or 'both'
+        use_simple = data.get("use_simple", False)  # Whether to use --simple flag
 
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
@@ -236,12 +237,17 @@ def generate_cabling_guide():
                     # Run the cabling generator with proper command-line flags
                     cmd = [
                         generator_path,
-                        "--cluster", os.path.abspath(cabling_path),      # -c, --cluster
-                        "--deployment", os.path.abspath(deployment_path), # -d, --deployment  
-                        "--output", input_prefix                          # -o, --output
+                        "-c", os.path.abspath(cabling_path),      # -c, --cluster
+                        "-d", os.path.abspath(deployment_path), # -d, --deployment  
+                        "-o", input_prefix                          # -o, --output
                     ]
+                    
+                    # Add --simple flag if requested (for hostname-based output)
+                    if use_simple:
+                        cmd.append("--simple")
                     print(f"Running command: {' '.join(cmd)}")  # Debug logging
                     print(f"Working directory: {temp_output_dir}")  # Debug logging
+                    print(f"Use simple mode: {use_simple}")  # Debug logging
 
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=temp_output_dir)
 

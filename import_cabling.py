@@ -767,7 +767,12 @@ class NetworkCablingCytoscapeVisualizer:
         
         # Track node types for each shelf unit
         if "rack_num" in source_data and "shelf_u" in source_data:
-            shelf_key = f"{source_data['rack_num']}_{source_data['shelf_u']}"
+            # Include hostname in shelf_key to prevent collisions when same location has different hostnames
+            hostname = source_data.get("hostname", "")
+            if hostname:
+                shelf_key = f"{source_data['rack_num']}_{source_data['shelf_u']}_{hostname}"
+            else:
+                shelf_key = f"{source_data['rack_num']}_{source_data['shelf_u']}"
             node_type = source_data.get("node_type", "wh_galaxy")
             self.mixed_node_types[shelf_key] = self.normalize_node_type(node_type)
             self.node_locations[shelf_key] = {
@@ -779,7 +784,12 @@ class NetworkCablingCytoscapeVisualizer:
             }
         
         if "rack_num" in dest_data and "shelf_u" in dest_data:
-            shelf_key = f"{dest_data['rack_num']}_{dest_data['shelf_u']}"
+            # Include hostname in shelf_key to prevent collisions when same location has different hostnames
+            hostname = dest_data.get("hostname", "")
+            if hostname:
+                shelf_key = f"{dest_data['rack_num']}_{dest_data['shelf_u']}_{hostname}"
+            else:
+                shelf_key = f"{dest_data['rack_num']}_{dest_data['shelf_u']}"
             node_type = dest_data.get("node_type", "wh_galaxy")
             self.mixed_node_types[shelf_key] = self.normalize_node_type(node_type)
             self.node_locations[shelf_key] = {
@@ -922,10 +932,17 @@ class NetworkCablingCytoscapeVisualizer:
             hall = ""
             aisle = ""
             if shelf_units:
-                first_shelf_key = f"{rack_num}_{shelf_units[0]}"
-                first_shelf_info = self.node_locations.get(first_shelf_key, {})
-                hall = first_shelf_info.get("hall", "")
-                aisle = first_shelf_info.get("aisle", "")
+                # Try to find location info for any shelf in this rack
+                for shelf_u in shelf_units:
+                    # Try with hostname first, then without
+                    for shelf_key in [f"{rack_num}_{shelf_u}_{hostname}" for hostname in [""] + [info.get("hostname", "") for info in self.node_locations.values() if info.get("rack_num") == rack_num and info.get("shelf_u") == shelf_u]]:
+                        if shelf_key in self.node_locations:
+                            first_shelf_info = self.node_locations[shelf_key]
+                            hall = first_shelf_info.get("hall", "")
+                            aisle = first_shelf_info.get("aisle", "")
+                            break
+                    if hall or aisle:
+                        break
 
             # Create rack node with location info
             rack_id = self.generate_node_id("rack", rack_num)
@@ -938,34 +955,59 @@ class NetworkCablingCytoscapeVisualizer:
             shelf_positions = self.get_child_positions_for_parent("rack", shelf_units, rack_x, rack_y)
 
             for shelf_u, shelf_x, shelf_y in shelf_positions:
-                # Get the node type and location info for this specific shelf
-                shelf_key = f"{rack_num}_{shelf_u}"
-                shelf_node_type = self.mixed_node_types.get(shelf_key, self.shelf_unit_type)
-                shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
-                location_info = self.node_locations.get(shelf_key, {})
-                hostname = location_info.get("hostname", "")
+                # Find all hostnames for this shelf position
+                hostnames_at_position = []
+                for info in self.node_locations.values():
+                    if info.get("rack_num") == rack_num and info.get("shelf_u") == shelf_u:
+                        hostname = info.get("hostname", "")
+                        if hostname:
+                            hostnames_at_position.append(hostname)
+                
+                # If no hostnames found, create a shelf without hostname
+                if not hostnames_at_position:
+                    hostnames_at_position = [""]
+                
+                # Create a shelf for each hostname at this position
+                for i, hostname in enumerate(hostnames_at_position):
+                    # Calculate offset position for multiple shelves at same location
+                    offset_x = shelf_x + (i * 50)  # 50px horizontal offset for each additional shelf
+                    offset_y = shelf_y
+                    
+                    # Get the node type and location info for this specific shelf
+                    if hostname:
+                        shelf_key = f"{rack_num}_{shelf_u}_{hostname}"
+                    else:
+                        shelf_key = f"{rack_num}_{shelf_u}"
+                    
+                    shelf_node_type = self.mixed_node_types.get(shelf_key, self.shelf_unit_type)
+                    location_info = self.node_locations.get(shelf_key, {})
+                    shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
 
-                # Create shelf node with hostname
-                shelf_id = self.generate_node_id("shelf", rack_num, shelf_u)
-                shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
-                shelf_node = self.create_node_from_template(
-                    "shelf",
-                    shelf_id,
-                    rack_id,
-                    shelf_label,
-                    shelf_x,
-                    shelf_y,
-                    rack_num=rack_num,
-                    shelf_u=shelf_u,
-                    shelf_node_type=shelf_node_type,
-                    hostname=hostname,
-                    hall=location_info.get("hall", ""),
-                    aisle=location_info.get("aisle", ""),
-                )
-                self.nodes.append(shelf_node)
+                    # Create shelf node with hostname
+                    # Use hostname in shelf ID to make it unique when multiple hostnames at same location
+                    if hostname:
+                        shelf_id = f"{hostname}"
+                    else:
+                        shelf_id = self.generate_node_id("shelf", rack_num, shelf_u)
+                    shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
+                    shelf_node = self.create_node_from_template(
+                        "shelf",
+                        shelf_id,
+                        rack_id,
+                        shelf_label,
+                        offset_x,
+                        offset_y,
+                        rack_num=rack_num,
+                        shelf_u=shelf_u,
+                        shelf_node_type=shelf_node_type,
+                        hostname=hostname,
+                        hall=location_info.get("hall", ""),
+                        aisle=location_info.get("aisle", ""),
+                    )
+                    self.nodes.append(shelf_node)
 
-                # Create trays and ports
-                self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname)
+                    # Create trays and ports
+                    self._create_trays_and_ports(shelf_id, shelf_config, offset_x, offset_y, rack_num, shelf_u, shelf_node_type, hostname)
 
     def _create_shelf_hierarchy(self):
         """Create shelf-only hierarchy nodes (shelves -> trays -> ports)"""
@@ -1087,9 +1129,20 @@ class NetworkCablingCytoscapeVisualizer:
     def _generate_port_ids(self, connection):
         """Generate source and destination port IDs based on CSV format"""
         if self.csv_format == "hierarchical":
-            # Hierarchical format: rack/shelf/tray/port hierarchy
-            src_shelf_label = f"{connection['source']['rack_num']}_U{connection['source']['shelf_u']}"
-            dst_shelf_label = f"{connection['destination']['rack_num']}_U{connection['destination']['shelf_u']}"
+            # Hierarchical format: use hostname if available, otherwise use rack/shelf format
+            src_hostname = connection["source"].get("hostname", "")
+            dst_hostname = connection["destination"].get("hostname", "")
+            
+            if src_hostname:
+                src_shelf_label = src_hostname
+            else:
+                src_shelf_label = f"{connection['source']['rack_num']}_U{connection['source']['shelf_u']}"
+                
+            if dst_hostname:
+                dst_shelf_label = dst_hostname
+            else:
+                dst_shelf_label = f"{connection['destination']['rack_num']}_U{connection['destination']['shelf_u']}"
+                
             src_port_id = self.generate_node_id("port", src_shelf_label, connection["source"]["tray"], connection["source"]["port"])
             dst_port_id = self.generate_node_id("port", dst_shelf_label, connection["destination"]["tray"], connection["destination"]["port"])
         else:
@@ -1104,8 +1157,18 @@ class NetworkCablingCytoscapeVisualizer:
     def _get_connection_color(self, connection):
         """Determine connection color based on whether ports are on the same node"""
         if self.csv_format == "hierarchical":
-            source_node_id = f"{connection['source']['rack_num']}_{connection['source']['shelf_u']}"
-            dest_node_id = f"{connection['destination']['rack_num']}_{connection['destination']['shelf_u']}"
+            # For hierarchical format, use hostname if available, otherwise use rack/shelf
+            source_hostname = connection["source"].get("hostname", "")
+            dest_hostname = connection["destination"].get("hostname", "")
+            
+            if source_hostname and dest_hostname:
+                # Both have hostnames - compare hostnames
+                source_node_id = source_hostname
+                dest_node_id = dest_hostname
+            else:
+                # Fall back to rack/shelf comparison
+                source_node_id = f"{connection['source']['rack_num']}_{connection['source']['shelf_u']}"
+                dest_node_id = f"{connection['destination']['rack_num']}_{connection['destination']['shelf_u']}"
         elif self.csv_format in ["hostname_based", "minimal"]:
             source_node_id = connection["source"].get("hostname", "unknown")
             dest_node_id = connection["destination"].get("hostname", "unknown")

@@ -2651,6 +2651,36 @@ async function exportDeploymentDescriptor() {
     }
 }
 
+/**
+ * Check if any shelf nodes have complete location information (hall, aisle, rack_num)
+ * @returns {boolean} True if all shelf nodes have location info, false otherwise
+ */
+function hasCompleteLocationInfo() {
+    if (typeof cy === 'undefined' || !cy) {
+        return false;
+    }
+
+    const shelfNodes = cy.nodes('[type="shelf"]');
+    
+    // If no shelf nodes, assume we need simple mode
+    if (shelfNodes.length === 0) {
+        return false;
+    }
+
+    // Check if any shelf node is missing location information
+    for (let i = 0; i < shelfNodes.length; i++) {
+        const node = shelfNodes[i];
+        const data = node.data();
+        
+        // Check if this shelf node has complete location data
+        if (!data.hall || !data.aisle || data.rack_num === undefined) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 async function generateCablingGuide() {
     if (typeof cy === 'undefined' || !cy) {
         showExportStatus('No visualization data available', 'error');
@@ -2674,6 +2704,13 @@ async function generateCablingGuide() {
         const customFileName = document.getElementById('exportFileNameInput').value.trim();
         const inputPrefix = customFileName || 'network_topology';
 
+        // Check if we need to use simple mode (hostname-based output)
+        const useSimple = !hasCompleteLocationInfo();
+        
+        if (useSimple) {
+            showExportStatus('Using hostname-based output (--simple flag) - location info missing', 'info');
+        }
+
         // Send to server for processing
         const response = await fetch('/generate_cabling_guide', {
             method: 'POST',
@@ -2683,7 +2720,8 @@ async function generateCablingGuide() {
             body: JSON.stringify({
                 cytoscape_data: cytoscapeData,
                 input_prefix: inputPrefix,
-                generate_type: 'cabling_guide'
+                generate_type: 'cabling_guide',
+                use_simple: useSimple
             })
         });
 
